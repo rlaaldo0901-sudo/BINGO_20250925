@@ -10,14 +10,7 @@ function QR({ value, size = 160 }: { value: string; size?: number }) {
 
 /* ============ 타입 ============ */
 type Cats = Record<string, string[]>;
-type Config = {
-  cats: Cats;
-  size: number;
-  lines: number;
-  ord?: string[];
-  updatedAt?: string;
-  error?: string;
-};
+type Config = { cats: Cats; size: number; lines: number; ord?: string[] };
 
 /* ============ 상수/유틸 ============ */
 const SIZE = 4;
@@ -32,13 +25,11 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-/** 어떤 값이 들어와도 안전한 “단어 배열”로 정규화 */
+/** 어떤 값이 들어와도 문자열 배열로 정규화 */
 function normalizeWords(raw: any): string[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((x) =>
-      typeof x === "string" ? x : x == null ? "" : String(x)
-    )
+    .map((x) => (x == null ? "" : String(x)))
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -82,35 +73,22 @@ function getParams(): URLSearchParams {
   const s = typeof window !== "undefined" ? window.location.search : "";
   return new URLSearchParams(s.startsWith("?") ? s.slice(1) : s);
 }
-
 function isPlayerRoute(): boolean {
   if (typeof window === "undefined") return false;
   return getParams().get("view") === "player";
 }
 
 /* ============ Error Boundary ============ */
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { error?: any }
-> {
-  constructor(props: any) {
-    super(props);
-    this.state = {};
-  }
-  static getDerivedStateFromError(error: any) {
-    return { error };
-  }
-  componentDidCatch(error: any, info: any) {
-    console.error("Render error:", error, info);
-  }
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error?: any }> {
+  constructor(p: any) { super(p); this.state = {}; }
+  static getDerivedStateFromError(error: any) { return { error }; }
+  componentDidCatch(error: any, info: any) { console.error("Render error:", error, info); }
   render() {
     if (this.state.error) {
       return (
         <div style={{ padding: 16, color: "#b91c1c" }}>
           <h2 style={{ fontWeight: 700, marginBottom: 8 }}>화면 렌더링 오류</h2>
-          <pre style={{ whiteSpace: "pre-wrap" }}>
-            {String(this.state.error?.message || this.state.error)}
-          </pre>
+          <pre style={{ whiteSpace: "pre-wrap" }}>{String(this.state.error?.message || this.state.error)}</pre>
         </div>
       );
     }
@@ -120,42 +98,46 @@ class ErrorBoundary extends React.Component<
 
 /* ============ 카드 ============ */
 function Card({ grid }: { grid: string[][] }) {
-  const [marked, setMarked] = useState<boolean[][]>(
-    grid.map((r) => r.map(() => false))
-  );
-  useEffect(() => setMarked(grid.map((r) => r.map(() => false))), [grid]);
+  // 모든 셀을 문자열로 강제
+  const safeGrid = useMemo(() => grid.map((row) => row.map((cell) => String(cell ?? ""))), [grid]);
+
+  const [marked, setMarked] = useState<boolean[][]>(safeGrid.map((r) => r.map(() => false)));
+  useEffect(() => setMarked(safeGrid.map((r) => r.map(() => false))), [safeGrid]);
 
   const lines = useMemo(() => countCompletedLines(marked), [marked]);
   const bingo = lines >= REQUIRED_LINES;
 
   const toggle = (r: number, c: number) =>
-    setMarked((cur) =>
-      cur.map((row, ri) => row.map((m, ci) => (ri === r && ci === c ? !m : m)))
-    );
+    setMarked((cur) => cur.map((row, ri) => row.map((m, ci) => (ri === r && ci === c ? !m : m))));
+
+  // flatMap 사용 안 함 (더 안전)
+  const cells: React.ReactElement[] = [];
+  for (let r = 0; r < safeGrid.length; r++) {
+    for (let c = 0; c < safeGrid[r].length; c++) {
+      const cell = safeGrid[r][c];
+      cells.push(
+        <button
+          key={`${r}-${c}`}
+          onClick={() => toggle(r, c)}
+          style={{
+            aspectRatio: "1/1",
+            borderRadius: 12,
+            border: "1px solid #e2e8f0",
+            padding: 8,
+            background: marked[r][c] ? "#dcfce7" : "#fff",
+            textDecoration: marked[r][c] ? "line-through" : "none",
+            boxShadow: "0 1px 2px rgba(0,0,0,.06)"
+          }}
+        >
+          {cell}
+        </button>
+      );
+    }
+  }
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
-        {grid.flatMap((row, r) =>
-          row.map((cell, c) => (
-            <button
-              key={`${r}-${c}`}
-              onClick={() => toggle(r, c)}
-              style={{
-                aspectRatio: "1/1",
-                borderRadius: 12,
-                border: "1px solid #e2e8f0",
-                padding: 8,
-                background: marked[r][c] ? "#dcfce7" : "#fff",
-                textDecoration: marked[r][c] ? "line-through" : "none",
-                boxShadow: "0 1px 2px rgba(0,0,0,.06)"
-              }}
-            >
-              {String(cell)}
-            </button>
-          ))
-        )}
-      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>{cells}</div>
       <div style={{ marginTop: 12, textAlign: "center" }}>
         <span
           style={{
@@ -174,7 +156,7 @@ function Card({ grid }: { grid: string[][] }) {
   );
 }
 
-/* ============ 플레이어 페이지 (고정 JSON 로드) ============ */
+/* ============ 플레이어 (고정 JSON 로드) ============ */
 function PlayerPage() {
   const params = getParams();
   const src = params.get("src");
@@ -191,22 +173,14 @@ function PlayerPage() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as any;
 
-        // JSON 정규화: 잘못된 구조/타입 방지
         const cats: Cats = {};
         const rawCats = json?.cats && typeof json.cats === "object" ? json.cats : {};
-        Object.keys(rawCats).forEach((k) => {
-          cats[k] = normalizeWords(rawCats[k]);
-        });
+        Object.keys(rawCats).forEach((k) => (cats[k] = normalizeWords(rawCats[k])));
         const ord = Array.isArray(json?.ord) ? normalizeWords(json.ord) : Object.keys(cats);
 
         if (!Object.keys(cats).length) throw new Error("cats 안에 카테고리가 없습니다.");
 
-        const cfg: Config = {
-          cats,
-          size: Number(json?.size) || SIZE,
-          lines: Number(json?.lines) || REQUIRED_LINES,
-          ord
-        };
+        const cfg: Config = { cats, size: Number(json?.size) || SIZE, lines: Number(json?.lines) || REQUIRED_LINES, ord };
         if (alive) setData(cfg);
       } catch (e: any) {
         if (alive) setErr(String(e.message || e));
@@ -226,11 +200,7 @@ function PlayerPage() {
 
   const pick = (name: string) => {
     setCat(name);
-    try {
-      setGrid(generateCard(cats[name]));
-    } catch (e: any) {
-      alert(e.message);
-    }
+    try { setGrid(generateCard(cats[name])); } catch (e: any) { alert(e.message); }
   };
 
   return (
@@ -239,16 +209,21 @@ function PlayerPage() {
         <>
           <h1 style={{ fontWeight: 800, fontSize: 20, marginBottom: 12 }}>달빛캠프 · 카테고리 선택</h1>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
-            {ord.map((name) => (
-              <button
-                key={name}
-                onClick={() => pick(name)}
-                style={{ padding: 12, borderRadius: 12, border: "1px solid #e2e8f0", background: "#f1f5f9", textAlign: "left" }}
-              >
-                <div style={{ fontWeight: 600 }}>{String(name)}</div>
-                <div style={{ fontSize: 12, color: "#64748b" }}>단어 {cats[name]?.length ?? 0}개</div>
-              </button>
-            ))}
+            {ord.map((nameRaw) => {
+              const name = String(nameRaw ?? "");
+              return (
+                <button
+                  key={name}
+                  onClick={() => pick(name)}
+                  style={{ padding: 12, borderRadius: 12, border: "1px solid #e2e8f0", background: "#f1f5f9", textAlign: "left" }}
+                >
+                  <div style={{ fontWeight: 600 }}>{name}</div>
+                  <div style={{ fontSize: 12, color: "#64748b" }}>
+                    단어 {Array.isArray(cats[name]) ? cats[name].length : 0}개
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </>
       ) : (
@@ -271,7 +246,7 @@ function PlayerPage() {
   );
 }
 
-/* ============ 편집자 페이지 (고정 링크/QR) ============ */
+/* ============ 편집자 (고정 링크/QR) ============ */
 function EditorPage() {
   const ORIGIN = typeof window !== "undefined" ? window.location.origin : "";
   const playerLink = `${ORIGIN}/?view=player&src=${encodeURIComponent(`${ORIGIN}/bingo.json`)}`;
@@ -318,9 +293,5 @@ function EditorPage() {
 
 /* ============ 루트 앱 ============ */
 export default function App() {
-  return (
-    <ErrorBoundary>
-      {isPlayerRoute() ? <PlayerPage /> : <EditorPage />}
-    </ErrorBoundary>
-  );
+  return <ErrorBoundary>{isPlayerRoute() ? <PlayerPage /> : <EditorPage />}</ErrorBoundary>;
 }
