@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-/** QR: 외부 API 이미지 방식 */
+/** ====== 간단 QR (외부 이미지 API 사용, 의존성 없음) ====== */
 function QR({ value, size = 160 }: { value: string; size?: number }) {
   const src = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
     value
@@ -8,7 +8,7 @@ function QR({ value, size = 160 }: { value: string; size?: number }) {
   return <img alt="QR" src={src} width={size} height={size} />;
 }
 
-// ================= Types =================
+/** ====== 타입 ====== */
 type Cats = Record<string, string[]>;
 type Config = {
   cats: Cats;
@@ -18,13 +18,12 @@ type Config = {
   updatedAt?: string;
   error?: string;
 };
-type Settings = { dataUrl: string };
 
-// ================= Config =================
-const SIZE = 4; // 4x4
-const REQUIRED_LINES = 3; // 3줄 완성 시 BINGO
+/** ====== 상수 ====== */
+const SIZE = 4;
+const REQUIRED_LINES = 3;
 
-// ================= Utils =================
+/** ====== 유틸 ====== */
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -37,9 +36,7 @@ function shuffle<T>(arr: T[]): T[] {
 function generateCard(words: string[]): string[][] {
   const needed = SIZE * SIZE;
   if (words.length < needed) {
-    throw new Error(
-      `단어 풀이 부족합니다. (필요: ${needed}, 제공: ${words.length})`
-    );
+    throw new Error(`단어 풀이 부족합니다. (필요: ${needed}, 제공: ${words.length})`);
   }
   const picks = shuffle(words).slice(0, needed);
   const grid: string[][] = [];
@@ -54,14 +51,16 @@ function generateCard(words: string[]): string[][] {
 
 function countCompletedLines(marked: boolean[][]): number {
   let lines = 0;
+  // rows
   for (let r = 0; r < SIZE; r++) if (marked[r].every(Boolean)) lines++;
+  // cols
   for (let c = 0; c < SIZE; c++) {
-    let all = true;
-    for (let r = 0; r < SIZE; r++) if (!marked[r][c]) all = false;
-    if (all) lines++;
+    let ok = true;
+    for (let r = 0; r < SIZE; r++) if (!marked[r][c]) ok = false;
+    if (ok) lines++;
   }
-  let d1 = true,
-    d2 = true;
+  // diagonals
+  let d1 = true, d2 = true;
   for (let i = 0; i < SIZE; i++) {
     if (!marked[i][i]) d1 = false;
     if (!marked[i][SIZE - 1 - i]) d2 = false;
@@ -71,247 +70,198 @@ function countCompletedLines(marked: boolean[][]): number {
   return lines;
 }
 
-function baseUrl(): string {
-  if (typeof window === "undefined") return "";
-  const { origin, pathname } = window.location;
-  return origin + pathname;
+function getParams(): URLSearchParams {
+  const s = typeof window !== "undefined" ? window.location.search : "";
+  return new URLSearchParams(s.startsWith("?") ? s.slice(1) : s);
 }
 
-function getAllParams(): URLSearchParams {
-  const search =
-    typeof window !== "undefined" ? window.location.search : "";
-  return new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+/** ====== 라우팅: ?view=player 인지만 딱 체크 (단순/확실) ====== */
+function isPlayerRoute(): boolean {
+  if (typeof window === "undefined") return false;
+  const p = getParams();
+  return p.get("view") === "player";
 }
 
-// ================= Card =================
+/** ====== 카드 컴포넌트 ====== */
 function Card({ grid }: { grid: string[][] }) {
-  const [marked, setMarked] = useState<boolean[][]>(
-    grid.map((row) => row.map(() => false))
-  );
-  useEffect(() => {
-    setMarked(grid.map((row) => row.map(() => false)));
-  }, [grid]);
+  const [marked, setMarked] = useState<boolean[][]>(grid.map((r) => r.map(() => false)));
+  useEffect(() => setMarked(grid.map((r) => r.map(() => false))), [grid]);
 
   const lines = useMemo(() => countCompletedLines(marked), [marked]);
   const bingo = lines >= REQUIRED_LINES;
-  function toggle(r: number, c: number) {
-    setMarked((cur) =>
-      cur.map((row, ri) =>
-        row.map((m, ci) => (ri === r && ci === c ? !m : m))
-      )
-    );
-  }
+
+  const toggle = (r: number, c: number) =>
+    setMarked((cur) => cur.map((row, ri) => row.map((m, ci) => (ri === r && ci === c ? !m : m))));
+
   return (
-    <div className="w-full">
-      <div className="grid grid-cols-4 gap-1 select-none">
+    <div>
+      <div className="grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
         {grid.flatMap((row, r) =>
           row.map((cell, c) => (
             <button
               key={`${r}-${c}`}
               onClick={() => toggle(r, c)}
-              className={
-                "aspect-square flex items-center justify-center rounded-xl border text-center p-2 text-sm sm:text-base md:text-lg lg:text-xl shadow-sm " +
-                (marked[r][c]
-                  ? "bg-green-100 border-green-300 line-through"
-                  : "bg-white border-slate-200 hover:bg-slate-50")
-              }
+              style={{
+                aspectRatio: "1/1",
+                borderRadius: 12,
+                border: "1px solid #e2e8f0",
+                padding: 8,
+                background: marked[r][c] ? "#dcfce7" : "#fff",
+                textDecoration: marked[r][c] ? "line-through" : "none",
+                boxShadow: "0 1px 2px rgba(0,0,0,.06)"
+              }}
             >
-              <span>{cell}</span>
+              {cell}
             </button>
           ))
         )}
       </div>
-      <div className="mt-3 text-center">
+      <div style={{ marginTop: 12, textAlign: "center" }}>
         <span
-          className={
-            "inline-block rounded-full px-3 py-1 text-sm font-semibold " +
-            (bingo
-              ? "bg-emerald-500 text-white"
-              : "bg-slate-200 text-slate-700")
-          }
+          style={{
+            display: "inline-block",
+            padding: "6px 12px",
+            borderRadius: 999,
+            fontWeight: 600,
+            background: bingo ? "#10b981" : "#e2e8f0",
+            color: bingo ? "#fff" : "#334155"
+          }}
         >
-          {bingo
-            ? `BINGO! (${lines}줄)`
-            : `완성 줄: ${lines} / ${REQUIRED_LINES}`}
+          {bingo ? `BINGO! (${lines}줄)` : `완성 줄: ${lines} / ${REQUIRED_LINES}`}
         </span>
       </div>
     </div>
   );
 }
 
-// ================= Player =================
-function PlayerPageBase({ data }: { data: Config | null }) {
-  const cats = data?.cats || {};
-  const ord = Array.isArray(data?.ord)
-    ? data!.ord!.filter((n) => (cats as Cats)[n])
-    : null;
-  const catNames = ord && ord.length ? ord : Object.keys(cats);
+/** ====== 플레이어 페이지 (src=.../bingo.json 로드) ====== */
+function PlayerPage() {
+  const params = getParams();
+  const src = params.get("src");
+  const [data, setData] = useState<Config | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!src) { setErr("URL에 src 파라미터가 없습니다."); return; }
+      try {
+        const bust = `${src}${src.includes("?") ? "&" : "?"}_ts=${Date.now()}`;
+        const res = await fetch(bust, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as Config;
+        if (!json?.cats) throw new Error("JSON에 cats 키가 없습니다.");
+        if (!Object.keys(json.cats).length) throw new Error("cats 안에 카테고리가 없습니다.");
+        if (alive) setData(json);
+      } catch (e: any) {
+        if (alive) setErr(String(e.message || e));
+      }
+    })();
+    return () => { alive = false; };
+  }, [src]);
+
+  if (err) return <div style={{ padding: 16, color: "#b91c1c" }}>에러: {err}</div>;
+  if (!data) return <div style={{ padding: 16 }}>불러오는 중…</div>;
+
+  const cats = data.cats;
+  const ord = Array.isArray(data.ord) ? data.ord.filter((n) => cats[n]) : Object.keys(cats);
+
   const [cat, setCat] = useState<string>("");
   const [grid, setGrid] = useState<string[][] | null>(null);
 
-  function pickCategory(name: string) {
+  const pick = (name: string) => {
     setCat(name);
-    const words = (cats as Cats)[name] || [];
-    try {
-      setGrid(generateCard(words));
-    } catch (e: any) {
-      alert(e.message);
-    }
-  }
-
-  if (!data || catNames.length === 0) {
-    return (
-      <div className="p-6 max-w-md mx-auto">
-        <h1 className="text-xl font-bold mb-3">카테고리 선택</h1>
-        <p className="text-sm text-slate-600">
-          설정이 비어 있습니다. 편집자에게 최신 QR을 요청하세요.
-        </p>
-      </div>
-    );
-  }
+    try { setGrid(generateCard(cats[name])); } catch (e: any) { alert(e.message); }
+  };
 
   return (
-    <div className="relative p-6 max-w-3xl mx-auto">
-      <h1 className="text-xl font-bold mb-4">카테고리 선택</h1>
+    <div style={{ padding: 16, maxWidth: 960, margin: "0 auto" }}>
       {!cat ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {catNames.map((name) => (
-            <button
-              key={name}
-              onClick={() => pickCategory(name)}
-              className="px-3 py-2 rounded-xl border bg-white hover:bg-slate-50 text-left"
-            >
-              <div className="font-semibold">{name}</div>
-              <div className="text-xs text-slate-500">
-                단어 {(cats as Cats)[name].length}개
-              </div>
-            </button>
-          ))}
-        </div>
+        <>
+          <h1 style={{ fontWeight: 800, fontSize: 20, marginBottom: 12 }}>달빛캠프 · 카테고리 선택</h1>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
+            {ord.map((name) => (
+              <button
+                key={name}
+                onClick={() => pick(name)}
+                style={{ padding: 12, borderRadius: 12, border: "1px solid #e2e8f0", background: "#f1f5f9", textAlign: "left" }}
+              >
+                <div style={{ fontWeight: 600 }}>{name}</div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>단어 {cats[name].length}개</div>
+              </button>
+            ))}
+          </div>
+        </>
       ) : (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold">{cat} BINGO</h2>
-            <div className="flex gap-2">
-              <button
-                className="px-3 py-2 rounded-xl border"
-                onClick={() =>
-                  setGrid(generateCard((cats as Cats)[cat]))
-                }
-              >
-                새 카드
-              </button>
-              <button
-                className="px-3 py-2 rounded-xl border"
-                onClick={() => setCat("")}
-              >
-                카테고리 변경
-              </button>
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <h2 style={{ fontWeight: 700 }}>{cat} BINGO</h2>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e2e8f0" }}
+                      onClick={() => setGrid(generateCard(cats[cat]))}>새 카드</button>
+              <button style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e2e8f0" }}
+                      onClick={() => setCat("")}>카테고리 변경</button>
             </div>
           </div>
-          <div className="max-w-md">
-            {grid ? (
-              <Card grid={grid} />
-            ) : (
-              <div className="text-sm text-slate-600">카드를 생성하세요.</div>
-            )}
+          <div style={{ maxWidth: 480 }}>
+            {grid ? <Card grid={grid} /> : <div style={{ fontSize: 14, color: "#64748b" }}>카드를 생성하세요.</div>}
           </div>
-        </div>
+        </>
       )}
     </div>
   );
 }
 
-function PlayerPage() {
-  const params = getAllParams();
-  const srcParam = params.get("src");
-  const [remote, setRemote] = useState<Config | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    async function fetchRemote() {
-      if (!srcParam) return;
-      try {
-        const bust = `${srcParam}${
-          srcParam.includes("?") ? "&" : "?"
-        }_ts=${Date.now()}`;
-        const res = await fetch(bust, {
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache" }
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as Config;
-        if (alive) setRemote(json);
-      } catch (e) {
-        console.error("remote fetch error", e);
-        if (alive)
-          setRemote({
-            cats: {},
-            size: SIZE,
-            lines: REQUIRED_LINES,
-            error: "원격 데이터를 불러오지 못했습니다."
-          });
-      }
-    }
-    fetchRemote();
-    return () => {
-      alive = false;
-    };
-  }, [srcParam]);
-
-  const data = remote ?? null;
-  return (
-    <PlayerPageBase
-      data={data ?? { cats: {}, size: SIZE, lines: REQUIRED_LINES }}
-    />
-  );
-}
-
-// ================= Editor =================
-export default function BingoApp() {
-// 안전하게 ORIGIN 기준으로 고정 링크 생성
-const ORIGIN = typeof window !== "undefined" ? window.location.origin : "";
-const playerLink = `${ORIGIN}/?view=player&src=${encodeURIComponent(`${ORIGIN}/bingo.json`)}`;
-const editorLink = `${ORIGIN}/`;
-
+/** ====== 편집자 페이지 (링크/QR 고정 출력) ====== */
+function EditorPage() {
+  const ORIGIN = typeof window !== "undefined" ? window.location.origin : "";
+  const playerLink = `${ORIGIN}/?view=player&src=${encodeURIComponent(`${ORIGIN}/bingo.json`)}`;
+  const editorLink = `${ORIGIN}/`;
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-white to-slate-50 text-slate-900 p-4 md:p-6 lg:p-8">
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <aside className="p-4 rounded-2xl border bg-white h-max">
-          <h2 className="font-bold mb-3">배포용 링크 (고정)</h2>
-          <div className="space-y-4">
-            <div>
-              <div className="text-xs font-medium mb-1">
-                참여자 바로가기 링크
-              </div>
-              <div className="flex items-center justify-center p-3 rounded-xl border">
-                <QR value={playerLink || ""} size={160} />
-              </div>
-              <input
-                className="w-full mt-2 text-xs border rounded p-1"
-                value={playerLink}
-                readOnly
-              />
-            </div>
-            <div>
-              <div className="text-xs font-medium mb-1">편집자 링크</div>
-              <input
-                className="w-full text-xs border rounded p-1"
-                value={editorLink}
-                readOnly
-              />
-            </div>
+    <div style={{ minHeight: "100vh", padding: 16, background: "linear-gradient(#fff,#f8fafc)" }}>
+      <div style={{ maxWidth: 960, margin: "0 auto", display: "grid", gridTemplateColumns: "320px 1fr", gap: 24 }}>
+        <aside style={{ padding: 16, borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff", height: "max-content" }}>
+          <h2 style={{ fontWeight: 700, marginBottom: 12 }}>배포용 링크 (고정)</h2>
+
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>참여자 바로가기 링크</div>
+          <div style={{ display: "flex", justifyContent: "center", padding: 12, border: "1px solid #e2e8f0", borderRadius: 12 }}>
+            <QR value={playerLink} size={160} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginTop: 8 }}>
+            <input readOnly value={playerLink} style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 8, padding: 6 }} />
+            <a href={playerLink} target="_blank" rel="noreferrer"
+               style={{ fontSize: 12, background: "#059669", color: "#fff", padding: "6px 10px", borderRadius: 8, textDecoration: "none", textAlign: "center" }}>열기</a>
+            <button onClick={() => navigator.clipboard.writeText(playerLink)}
+                    style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0" }}>복사</button>
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 600, marginTop: 16, marginBottom: 6 }}>편집자 링크</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center" }}>
+            <input readOnly value={editorLink} style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 8, padding: 6 }} />
+            <a href={editorLink} target="_blank" rel="noreferrer"
+               style={{ fontSize: 12, background: "#0f172a", color: "#fff", padding: "6px 10px", borderRadius: 8, textDecoration: "none", textAlign: "center" }}>열기</a>
+            <button onClick={() => navigator.clipboard.writeText(editorLink)}
+                    style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, border: "1px solid #e2e8f0" }}>복사</button>
           </div>
         </aside>
 
-        <main className="lg:col-span-2 p-4 rounded-2xl border bg-white">
-          <h1 className="text-xl font-bold">달빛캠프 · 빙고 편집자 페이지</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            public/bingo.json 파일을 직접 수정하세요.
+        <main style={{ padding: 16, borderRadius: 16, border: "1px solid #e2e8f0", background: "#fff" }}>
+          <h1 style={{ fontWeight: 800, fontSize: 22 }}>달빛캠프 · 빙고 편집자 페이지</h1>
+          <p style={{ marginTop: 8, fontSize: 14, color: "#64748b" }}>
+            <code>public/bingo.json</code> 파일을 직접 수정하세요. 수정 후 커밋하면 같은 QR/링크로 참가자 페이지가 자동 업데이트됩니다.
           </p>
         </main>
       </div>
     </div>
   );
+}
+
+/** ====== 루트 앱: 라우팅 분기 ====== */
+export default function App() {
+  if (isPlayerRoute()) {
+    return <PlayerPage />;
+  }
+  return <EditorPage />;
 }
