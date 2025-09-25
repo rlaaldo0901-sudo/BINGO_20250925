@@ -269,9 +269,11 @@ function PlayerPage() {
 
 // ================= Editor =================
 export default function BingoApp() {
-  const abs = baseUrl();
-  const playerLink = `${abs}?view=player&src=${abs}bingo.json`;
-  const editorLink = `${abs}`;
+// 안전하게 ORIGIN 기준으로 고정 링크 생성
+const ORIGIN = typeof window !== "undefined" ? window.location.origin : "";
+const playerLink = `${ORIGIN}/?view=player&src=${encodeURIComponent(`${ORIGIN}/bingo.json`)}`;
+const editorLink = `${ORIGIN}/`;
+
 
   return (
     <div className="min-h-screen w-full bg-gradient-to-b from-white to-slate-50 text-slate-900 p-4 md:p-6 lg:p-8">
