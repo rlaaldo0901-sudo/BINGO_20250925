@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-/** ====== 간단 QR (외부 이미지 API 사용, 의존성 없음) ====== */
+/* ============ QR (외부 이미지 API, 의존성 0) ============ */
 function QR({ value, size = 160 }: { value: string; size?: number }) {
   const src = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
     value
@@ -8,7 +8,7 @@ function QR({ value, size = 160 }: { value: string; size?: number }) {
   return <img alt="QR" src={src} width={size} height={size} />;
 }
 
-/** ====== 타입 ====== */
+/* ============ 타입 ============ */
 type Cats = Record<string, string[]>;
 type Config = {
   cats: Cats;
@@ -19,11 +19,10 @@ type Config = {
   error?: string;
 };
 
-/** ====== 상수 ====== */
+/* ============ 상수/유틸 ============ */
 const SIZE = 4;
 const REQUIRED_LINES = 3;
 
-/** ====== 유틸 ====== */
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -33,7 +32,19 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function generateCard(words: string[]): string[][] {
+/** 어떤 값이 들어와도 안전한 “단어 배열”로 정규화 */
+function normalizeWords(raw: any): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((x) =>
+      typeof x === "string" ? x : x == null ? "" : String(x)
+    )
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function generateCard(wordsInput: any): string[][] {
+  const words = normalizeWords(wordsInput);
   const needed = SIZE * SIZE;
   if (words.length < needed) {
     throw new Error(`단어 풀이 부족합니다. (필요: ${needed}, 제공: ${words.length})`);
@@ -51,15 +62,12 @@ function generateCard(words: string[]): string[][] {
 
 function countCompletedLines(marked: boolean[][]): number {
   let lines = 0;
-  // rows
   for (let r = 0; r < SIZE; r++) if (marked[r].every(Boolean)) lines++;
-  // cols
   for (let c = 0; c < SIZE; c++) {
     let ok = true;
     for (let r = 0; r < SIZE; r++) if (!marked[r][c]) ok = false;
     if (ok) lines++;
   }
-  // diagonals
   let d1 = true, d2 = true;
   for (let i = 0; i < SIZE; i++) {
     if (!marked[i][i]) d1 = false;
@@ -75,27 +83,59 @@ function getParams(): URLSearchParams {
   return new URLSearchParams(s.startsWith("?") ? s.slice(1) : s);
 }
 
-/** ====== 라우팅: ?view=player 인지만 딱 체크 (단순/확실) ====== */
 function isPlayerRoute(): boolean {
   if (typeof window === "undefined") return false;
-  const p = getParams();
-  return p.get("view") === "player";
+  return getParams().get("view") === "player";
 }
 
-/** ====== 카드 컴포넌트 ====== */
+/* ============ Error Boundary ============ */
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error?: any }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = {};
+  }
+  static getDerivedStateFromError(error: any) {
+    return { error };
+  }
+  componentDidCatch(error: any, info: any) {
+    console.error("Render error:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 16, color: "#b91c1c" }}>
+          <h2 style={{ fontWeight: 700, marginBottom: 8 }}>화면 렌더링 오류</h2>
+          <pre style={{ whiteSpace: "pre-wrap" }}>
+            {String(this.state.error?.message || this.state.error)}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/* ============ 카드 ============ */
 function Card({ grid }: { grid: string[][] }) {
-  const [marked, setMarked] = useState<boolean[][]>(grid.map((r) => r.map(() => false)));
+  const [marked, setMarked] = useState<boolean[][]>(
+    grid.map((r) => r.map(() => false))
+  );
   useEffect(() => setMarked(grid.map((r) => r.map(() => false))), [grid]);
 
   const lines = useMemo(() => countCompletedLines(marked), [marked]);
   const bingo = lines >= REQUIRED_LINES;
 
   const toggle = (r: number, c: number) =>
-    setMarked((cur) => cur.map((row, ri) => row.map((m, ci) => (ri === r && ci === c ? !m : m))));
+    setMarked((cur) =>
+      cur.map((row, ri) => row.map((m, ci) => (ri === r && ci === c ? !m : m)))
+    );
 
   return (
     <div>
-      <div className="grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
         {grid.flatMap((row, r) =>
           row.map((cell, c) => (
             <button
@@ -111,7 +151,7 @@ function Card({ grid }: { grid: string[][] }) {
                 boxShadow: "0 1px 2px rgba(0,0,0,.06)"
               }}
             >
-              {cell}
+              {String(cell)}
             </button>
           ))
         )}
@@ -134,7 +174,7 @@ function Card({ grid }: { grid: string[][] }) {
   );
 }
 
-/** ====== 플레이어 페이지 (src=.../bingo.json 로드) ====== */
+/* ============ 플레이어 페이지 (고정 JSON 로드) ============ */
 function PlayerPage() {
   const params = getParams();
   const src = params.get("src");
@@ -149,10 +189,25 @@ function PlayerPage() {
         const bust = `${src}${src.includes("?") ? "&" : "?"}_ts=${Date.now()}`;
         const res = await fetch(bust, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as Config;
-        if (!json?.cats) throw new Error("JSON에 cats 키가 없습니다.");
-        if (!Object.keys(json.cats).length) throw new Error("cats 안에 카테고리가 없습니다.");
-        if (alive) setData(json);
+        const json = (await res.json()) as any;
+
+        // JSON 정규화: 잘못된 구조/타입 방지
+        const cats: Cats = {};
+        const rawCats = json?.cats && typeof json.cats === "object" ? json.cats : {};
+        Object.keys(rawCats).forEach((k) => {
+          cats[k] = normalizeWords(rawCats[k]);
+        });
+        const ord = Array.isArray(json?.ord) ? normalizeWords(json.ord) : Object.keys(cats);
+
+        if (!Object.keys(cats).length) throw new Error("cats 안에 카테고리가 없습니다.");
+
+        const cfg: Config = {
+          cats,
+          size: Number(json?.size) || SIZE,
+          lines: Number(json?.lines) || REQUIRED_LINES,
+          ord
+        };
+        if (alive) setData(cfg);
       } catch (e: any) {
         if (alive) setErr(String(e.message || e));
       }
@@ -164,14 +219,18 @@ function PlayerPage() {
   if (!data) return <div style={{ padding: 16 }}>불러오는 중…</div>;
 
   const cats = data.cats;
-  const ord = Array.isArray(data.ord) ? data.ord.filter((n) => cats[n]) : Object.keys(cats);
+  const ord = data.ord && data.ord.length ? data.ord.filter((n) => cats[n]) : Object.keys(cats);
 
   const [cat, setCat] = useState<string>("");
   const [grid, setGrid] = useState<string[][] | null>(null);
 
   const pick = (name: string) => {
     setCat(name);
-    try { setGrid(generateCard(cats[name])); } catch (e: any) { alert(e.message); }
+    try {
+      setGrid(generateCard(cats[name]));
+    } catch (e: any) {
+      alert(e.message);
+    }
   };
 
   return (
@@ -186,8 +245,8 @@ function PlayerPage() {
                 onClick={() => pick(name)}
                 style={{ padding: 12, borderRadius: 12, border: "1px solid #e2e8f0", background: "#f1f5f9", textAlign: "left" }}
               >
-                <div style={{ fontWeight: 600 }}>{name}</div>
-                <div style={{ fontSize: 12, color: "#64748b" }}>단어 {cats[name].length}개</div>
+                <div style={{ fontWeight: 600 }}>{String(name)}</div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>단어 {cats[name]?.length ?? 0}개</div>
               </button>
             ))}
           </div>
@@ -195,7 +254,7 @@ function PlayerPage() {
       ) : (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <h2 style={{ fontWeight: 700 }}>{cat} BINGO</h2>
+            <h2 style={{ fontWeight: 700 }}>{String(cat)} BINGO</h2>
             <div style={{ display: "flex", gap: 8 }}>
               <button style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e2e8f0" }}
                       onClick={() => setGrid(generateCard(cats[cat]))}>새 카드</button>
@@ -212,7 +271,7 @@ function PlayerPage() {
   );
 }
 
-/** ====== 편집자 페이지 (링크/QR 고정 출력) ====== */
+/* ============ 편집자 페이지 (고정 링크/QR) ============ */
 function EditorPage() {
   const ORIGIN = typeof window !== "undefined" ? window.location.origin : "";
   const playerLink = `${ORIGIN}/?view=player&src=${encodeURIComponent(`${ORIGIN}/bingo.json`)}`;
@@ -228,7 +287,6 @@ function EditorPage() {
           <div style={{ display: "flex", justifyContent: "center", padding: 12, border: "1px solid #e2e8f0", borderRadius: 12 }}>
             <QR value={playerLink} size={160} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", marginTop: 8 }}>
             <input readOnly value={playerLink} style={{ fontSize: 12, border: "1px solid #e2e8f0", borderRadius: 8, padding: 6 }} />
             <a href={playerLink} target="_blank" rel="noreferrer"
@@ -258,10 +316,11 @@ function EditorPage() {
   );
 }
 
-/** ====== 루트 앱: 라우팅 분기 ====== */
+/* ============ 루트 앱 ============ */
 export default function App() {
-  if (isPlayerRoute()) {
-    return <PlayerPage />;
-  }
-  return <EditorPage />;
+  return (
+    <ErrorBoundary>
+      {isPlayerRoute() ? <PlayerPage /> : <EditorPage />}
+    </ErrorBoundary>
+  );
 }
